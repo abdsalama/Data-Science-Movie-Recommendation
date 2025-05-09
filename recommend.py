@@ -16,7 +16,7 @@ movies["average_rating"] = movies["average_rating"].fillna(0)
 
 
 # دالة للعثور على الأنواع المشتركة بين الأفلام المدخلة
-def find_common_genres(movie_names):
+def find_common_genres(movie_names, preferred_genres=None):
     # تحويل أسماء الأفلام إلى أحرف صغيرة للمقارنة
     movie_names = [name.strip().lower() for name in movie_names if name.strip()]
 
@@ -38,24 +38,72 @@ def find_common_genres(movie_names):
 
     # استخراج الأنواع من الأفلام التي تم العثور عليها
     all_genres_sets = []
+    all_genres_list = []  # قائمة بجميع الأنواع مرتبة حسب تكرارها
+
     for movie_df in found_movies:
         # جمع كل الأنواع من الأفلام المطابقة
         movie_genres = set()
         for genres_list in movie_df['genres_list']:
             if isinstance(genres_list, list):  # التأكد من أن genres_list هو قائمة
                 # تحويل الأنواع إلى أحرف صغيرة
-                movie_genres.update([genre.lower() for genre in genres_list])
+                genres = [genre.lower() for genre in genres_list]
+                movie_genres.update(genres)
+                # إضافة الأنواع إلى القائمة الكاملة
+                all_genres_list.extend(genres)
+
         if movie_genres:  # إضافة المجموعة فقط إذا كانت غير فارغة
             all_genres_sets.append(movie_genres)
 
     # إيجاد التقاطع بين جميع مجموعات الأنواع
     if all_genres_sets:
         if len(all_genres_sets) == 1:
-            # إذا كان هناك فيلم واحد فقط، استخدم أنواعه
-            common_genres = all_genres_sets[0]
+            # إذا كان هناك فيلم واحد فقط
+            movie_genres = all_genres_sets[0]
+
+            if preferred_genres:
+                # إذا كانت هناك أنواع مفضلة، نجد التقاطع بينها وبين أنواع الفيلم
+                preferred_genres_set = set([g.strip().lower() for g in preferred_genres])
+                common_genres = movie_genres.intersection(preferred_genres_set)
+
+                # إذا لم يكن هناك تقاطع، نستخدم أنواع الفيلم
+                if not common_genres:
+                    common_genres = movie_genres
+            else:
+                # إذا لم تكن هناك أنواع مفضلة، نأخذ أول نوعين (أو كل الأنواع إذا كان عددها أقل من 2)
+                # نحسب تكرار كل نوع لتحديد الأنواع الأكثر أهمية
+                genre_counts = {}
+                for genre in all_genres_list:
+                    if genre in genre_counts:
+                        genre_counts[genre] += 1
+                    else:
+                        genre_counts[genre] = 1
+
+                # ترتيب الأنواع حسب تكرارها
+                sorted_genres = sorted(movie_genres, key=lambda g: genre_counts.get(g, 0), reverse=True)
+                common_genres = set(sorted_genres[:2]) if len(sorted_genres) > 2 else set(sorted_genres)
         else:
             # إيجاد التقاطع بين جميع مجموعات الأنواع
             common_genres = set.intersection(*all_genres_sets)
+
+            # إذا لم يكن هناك تقاطع، نأخذ الأنواع المشتركة بين أكبر عدد من الأفلام
+            if not common_genres:
+                # نحسب تكرار كل نوع
+                genre_counts = {}
+                for genre in all_genres_list:
+                    if genre in genre_counts:
+                        genre_counts[genre] += 1
+                    else:
+                        genre_counts[genre] = 1
+
+                # نأخذ الأنواع التي تظهر في أكثر من نصف الأفلام
+                threshold = len(found_movies) / 2
+                common_genres = {genre for genre, count in genre_counts.items() if count >= threshold}
+
+                # إذا لم نجد أنواعًا مشتركة، نأخذ أكثر نوعين تكرارًا
+                if not common_genres:
+                    sorted_genres = sorted(genre_counts.keys(), key=lambda g: genre_counts[g], reverse=True)
+                    common_genres = set(sorted_genres[:2]) if len(sorted_genres) > 2 else set(sorted_genres)
+
         return found_movies, list(common_genres)
 
     return found_movies, []
@@ -160,13 +208,20 @@ def search_movies():
     start_year_input = start_year_entry.get().strip()
     end_year_input = end_year_entry.get().strip()
 
+    # معالجة الأنواع المفضلة المدخلة
+    preferred_genres = None
+    if genres_input:
+        preferred_genres = [g.strip() for g in genres_input.split(",") if g.strip()]
+        if not preferred_genres:
+            preferred_genres = None
+
     # معالجة أسماء الأفلام المدخلة
     movie_names = None
     if movie_names_input:
         movie_names = [name.strip() for name in movie_names_input.split(",") if name.strip()]
         if movie_names:
             # البحث عن الأنواع المشتركة بين الأفلام المدخلة
-            found_movies, common_genres = find_common_genres(movie_names)
+            found_movies, common_genres = find_common_genres(movie_names, preferred_genres)
 
             if found_movies is None:
                 messagebox.showinfo("لا توجد نتائج", "لم يتم العثور على أي من الأفلام المدخلة")
@@ -176,19 +231,21 @@ def search_movies():
                 messagebox.showinfo("لا توجد أنواع مشتركة", "لا توجد أنواع مشتركة بين الأفلام المدخلة")
                 # يمكن الاستمرار باستخدام الأنواع المدخلة يدويًا إن وجدت
             else:
-                # إذا كان هناك أنواع مشتركة، استخدمها في البحث
-                if not genres_input:
-                    # إذا لم يدخل المستخدم أنواعًا، استخدم الأنواع المشتركة
-                    genres_input = ", ".join(common_genres)
-                    # عرض الأنواع المشتركة في حقل الإدخال
-                    genres_entry.delete(0, tk.END)
-                    genres_entry.insert(0, genres_input)
-                    results_text.insert(tk.END, f"الأنواع المشتركة بين الأفلام المدخلة: {', '.join(common_genres)}\n\n")
-                else:
-                    # إذا أدخل المستخدم أنواعًا، أضف الأنواع المشتركة إليها
-                    results_text.insert(tk.END, f"الأنواع المشتركة بين الأفلام المدخلة: {', '.join(common_genres)}\n")
-                    results_text.insert(tk.END, f"تم استخدام الأنواع المدخلة يدويًا: {genres_input}\n\n")
+                # تحديث حقل الأنواع بالأنواع المشتركة
+                genres_input = ", ".join(common_genres)
+                genres_entry.delete(0, tk.END)
+                genres_entry.insert(0, genres_input)
 
+                # عرض معلومات عن الأنواع المستخدمة
+                if len(found_movies) == 1:
+                    if preferred_genres:
+                        results_text.insert(tk.END, f"الأنواع المشتركة بين الفيلم والأنواع المفضلة: {', '.join(common_genres)}\n\n")
+                    else:
+                        results_text.insert(tk.END, f"تم اختيار أهم الأنواع من الفيلم: {', '.join(common_genres)}\n\n")
+                else:
+                    results_text.insert(tk.END, f"الأنواع المشتركة بين الأفلام المدخلة: {', '.join(common_genres)}\n\n")
+
+    # تحديث متغير الأنواع للبحث
     genres = None
     if genres_input:
         genres = [g.strip() for g in genres_input.split(",") if g.strip()]
@@ -226,11 +283,22 @@ def search_movies():
         messagebox.showerror("خطأ", "سنة البداية لا يمكن أن تكون أكبر من سنة النهاية")
         return
 
+    # التحقق من وجود معايير للبحث
     if not (genres or min_rating is not None or start_year or end_year):
-        messagebox.showerror(
-            "خطأ", "يجب تحديد معيار واحد على الأقل: الأنواع، التقييم، أو نطاق السنوات"
-        )
-        return
+        if movie_names:
+            # إذا كان هناك أسماء أفلام مدخلة وتم استخراج أنواع منها، نستمر بالبحث
+            if common_genres:
+                genres = common_genres
+            else:
+                messagebox.showerror(
+                    "خطأ", "لم يتم العثور على أنواع مشتركة. يرجى تحديد معيار آخر للبحث."
+                )
+                return
+        else:
+            messagebox.showerror(
+                "خطأ", "يجب تحديد معيار واحد على الأقل: الأنواع، التقييم، أو نطاق السنوات"
+            )
+            return
 
     filtered_movies = filter_movies(genres, min_rating, start_year, end_year)
     if filtered_movies.empty:

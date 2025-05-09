@@ -48,13 +48,24 @@ movies['title'] = movies['title'].str.replace(r'\(\d{4}\)', '', regex=True).str.
 movies['genres_list'] = movies['genres'].str.split('|')
 movies.drop(columns=['genres'], inplace=True)
 
-# 9. توافق البيانات بين الجداول بناءً على movieId
+# 9. حذف الأفلام قبل سنة 1990
+print(f"عدد الأفلام قبل حذف الأفلام القديمة: {len(movies)}")
+movies = movies.dropna(subset=['year'])  # حذف الأفلام بدون سنة
+movies = movies[movies['year'] >= 1990]
+print(f"عدد الأفلام بعد حذف الأفلام قبل 1990: {len(movies)}")
+
+# 10. حذف الأفلام المكررة (نفس العنوان ونفس السنة)
+print(f"عدد الأفلام قبل حذف المكررات: {len(movies)}")
+movies = movies.drop_duplicates(subset=['title'], keep='first')
+print(f"عدد الأفلام بعد حذف المكررات: {len(movies)}")
+
+# 11. توافق البيانات بين الجداول بناءً على movieId
 valid_movie_ids = set(movies['movieId'])
-ratings      = ratings[ratings['movieId'].isin(valid_movie_ids)]
+ratings = ratings[ratings['movieId'].isin(valid_movie_ids)]
 
 # (genome_tags لا يحتوي على movieId)
 
-# 10. حفظ الملفات النظيفة
+# 12. حفظ الملفات النظيفة
 movies.to_csv(r"./Datasets/clean_movies.csv", index=False)
 ratings.to_csv(r"./Datasets/clean_ratings.csv", index=False)
 
